@@ -5,11 +5,10 @@ import { PrismaClient } from "@prisma/client";
 const app = Fastify();
 const prisma = new PrismaClient();
 
+app.register(cors);
+
 app.get("/hello", async () => {
   const habits = await prisma.habit.findMany();
-
-  app.register(cors);
-
   return habits;
 });
 
@@ -18,5 +17,5 @@ app
     port: 3333,
   })
   .then(() => {
-    console.log("HTTP Server running!");
+    console.log("🚀 HTTP Server running on http://localhost:3333");
   });

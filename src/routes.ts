@@ -19,104 +19,65 @@ export async function appRoutes(app: FastifyInstance) {
         title,
         created_at: today,
         WeekDays: {
-          create: weekDays.map((weekDay) => {
-            return {
-              week_day: weekDay,
-            };
-          }),
+          create: weekDays.map((weekDay) => ({ week_day: weekDay })),
         },
       },
     });
   });
 
   app.get("/day", async (request) => {
-    const getDayParams = z.object({
-      date: z.coerce.date(),
-    });
+    const rawQuery = request.query as Record<string, string>;
 
-    const { date } = getDayParams.parse(request.query);
+    const dateKey = Object.keys(rawQuery).find((key) => key.trim() === "date");
+    if (!dateKey) {
+      throw new Error("Date parameter is required");
+    }
 
-    const parsedDate = dayjs(date).startOf("day");
+    const dateValue = rawQuery[dateKey];
+    const parsedDate = dayjs(dateValue).startOf("day");
+
+    if (!parsedDate.isValid()) {
+      throw new Error("Invalid date");
+    }
+
     const weekDay = parsedDate.get("day");
 
     const possibleHabits = await prisma.habit.findMany({
       where: {
-        created_at: {
-          lte: date,
-        },
-        WeekDays: {
-          some: {
-            week_day: weekDay,
-          },
-        },
+        created_at: { lte: parsedDate.toDate() },
+        WeekDays: { some: { week_day: weekDay } },
       },
     });
 
     const day = await prisma.day.findFirst({
-      where: {
-        date: parsedDate.toDate(),
-      },
-      include: {
-        DayHabits: true,
-      },
+      where: { date: parsedDate.toDate() },
+      include: { DayHabits: true },
     });
 
-    const completedHabits =
-      day?.DayHabits.map((dayHabit) => {
-        return dayHabit.habit_id;
-      }) ?? [];
+    const completedHabits = day?.DayHabits.map((dh) => dh.habit_id) ?? [];
 
-    return {
-      possibleHabits,
-      completedHabits,
-    };
+    return { possibleHabits, completedHabits };
   });
 
   app.patch("/habits/:id/toggle", async (request) => {
-    const toggleHabitParams = z.object({
-      id: z.string().uuid(),
-    });
-
+    const toggleHabitParams = z.object({ id: z.string().uuid() });
     const { id } = toggleHabitParams.parse(request.params);
 
     const today = dayjs().startOf("day").toDate();
 
-    let day = await prisma.day.findUnique({
-      where: {
-        date: today,
-      },
-    });
-
+    let day = await prisma.day.findUnique({ where: { date: today } });
     if (!day) {
-      day = await prisma.day.create({
-        data: {
-          date: today,
-        },
-      });
+      day = await prisma.day.create({ data: { date: today } });
     }
 
     const dayHabit = await prisma.dayhabit.findUnique({
-      where: {
-        day_id_habit_id: {
-          day_id: day.id,
-          habit_id: id,
-        },
-      },
+      where: { day_id_habit_id: { day_id: day.id, habit_id: id } },
     });
 
     if (dayHabit) {
-      await prisma.dayhabit.delete({
-        where: {
-          id: dayHabit.id,
-        },
-      });
+      await prisma.dayhabit.delete({ where: { id: dayHabit.id } });
     } else {
-      await prisma.dayhabit.create({
-        data: {
-          day_id: day.id,
-          habit_id: id,
-        },
-      });
+      await prisma.dayhabit.create({ data: { day_id: day.id, habit_id: id } });
     }
   });
 
@@ -126,24 +87,19 @@ export async function appRoutes(app: FastifyInstance) {
         D.id, 
         D.date,
         (
-          SELECT 
-            cast(count(*) as float)
+          SELECT CAST(count(*) AS float)
           FROM day_habits DH
           WHERE DH.day_id = D.id
-        ) as completed,
+        ) AS completed,
         (
-          SELECT
-            cast(count(*) as float)
+          SELECT CAST(count(*) AS float)
           FROM habit_week_days HDW
-          JOIN habits H
-            ON H.id = HDW.habit_id
-          WHERE
-            HDW.week_day = cast(strftime('%w', D.date/1000.0, 'unixepoch') as int)
+          JOIN habits H ON H.id = HDW.habit_id
+          WHERE HDW.week_day = CAST(strftime('%w', D.date/1000.0, 'unixepoch') AS int)
             AND H.created_at <= D.date
-        ) as amount
+        ) AS amount
       FROM days D
     `;
-
     return summary;
   });
 }

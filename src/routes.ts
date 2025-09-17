@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "./lib/prisma";
 
 export async function appRoutes(app: FastifyInstance) {
-  app.post("/habits", async (request) => {
+  app.post("/habits", async (request, reply) => {
     const createHabitBody = z.object({
       title: z.string(),
       weekDays: z.array(z.number().min(0).max(6)),
@@ -14,7 +14,7 @@ export async function appRoutes(app: FastifyInstance) {
 
     const today = dayjs().startOf("day").toDate();
 
-    await prisma.habit.create({
+    const habit = await prisma.habit.create({
       data: {
         title,
         created_at: today,
@@ -23,6 +23,8 @@ export async function appRoutes(app: FastifyInstance) {
         },
       },
     });
+
+    return reply.status(201).send(habit);
   });
 
   app.get("/day", async (request) => {
